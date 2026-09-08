@@ -1,0 +1,8 @@
+{
+  "name": "Fantomistic Player",
+  "description": "A minimalist black-and-white media player and stream aggregator featuring TMDB movie identification, custom 3D Fantomism loading animations, adaptive 1080p HLS playback, and full-screen embed capabilities.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

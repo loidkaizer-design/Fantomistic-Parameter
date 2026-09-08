@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="cloudGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#5522EC" />
+      <stop offset="50%" stop-color="#4618DE" />
+      <stop offset="100%" stop-color="#370DB8" />
+    </linearGradient>
+    <filter id="subtleShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#28088c" flood-opacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Cloud Container -->
+  <g filter="url(#subtleShadow)">
+    <!-- Cloud Silhouette -->
+    <g fill="url(#cloudGrad)">
+      <!-- Main body fills -->
+      <rect x="140" y="220" width="232" height="92" rx="46" />
+      <rect x="165" y="195" width="182" height="90" rx="40" />
+
+      <!-- Cloud Bumps -->
+      <!-- Center top bump -->
+      <circle cx="256" cy="180" r="74" />
+      <!-- Left top bump -->
+      <circle cx="204" cy="204" r="56" />
+      <!-- Right top bump -->
+      <circle cx="308" cy="204" r="56" />
+      <!-- Far left lower bump -->
+      <circle cx="160" cy="254" r="50" />
+      <!-- Far right lower bump -->
+      <circle cx="352" cy="254" r="50" />
+    </g>
+
+    <!-- Circuit Pins Hanging Down -->
+    <!-- Pin 1 (left: medium) -->
+    <g>
+      <line x1="188" y1="305" x2="188" y2="362" stroke="#370DB8" stroke-width="12" stroke-linecap="round" />
+      <circle cx="188" cy="362" r="16" fill="#370DB8" />
+      <circle cx="188" cy="362" r="8" fill="#FFFFFF" />
+    </g>
+
+    <!-- Pin 2 (center-left: long) -->
+    <g>
+      <line x1="224" y1="308" x2="224" y2="398" stroke="#370DB8" stroke-width="12" stroke-linecap="round" />
+      <circle cx="224" cy="398" r="16" fill="#370DB8" />
+      <circle cx="224" cy="398" r="8" fill="#FFFFFF" />
+    </g>
+
+    <!-- Pin 3 (center-right: medium) -->
+    <g>
+      <line x1="288" y1="308" x2="288" y2="362" stroke="#370DB8" stroke-width="12" stroke-linecap="round" />
+      <circle cx="288" cy="362" r="16" fill="#370DB8" />
+      <circle cx="288" cy="362" r="8" fill="#FFFFFF" />
+    </g>
+
+    <!-- Pin 4 (right: long) -->
+    <g>
+      <line x1="324" y1="305" x2="324" y2="398" stroke="#370DB8" stroke-width="12" stroke-linecap="round" />
+      <circle cx="324" cy="398" r="16" fill="#370DB8" />
+      <circle cx="324" cy="398" r="8" fill="#FFFFFF" />
+    </g>
+
+    <!-- API Text in Cloud -->
+    <g stroke="#FFFFFF" stroke-width="15" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <!-- Letter 'A' -->
+      <path d="M 180 274 L 180 242 C 180 226 193 214 209 214 C 225 214 238 226 238 242 L 238 274" />
+      <line x1="180" y1="252" x2="238" y2="252" />
+
+      <!-- Letter 'P' -->
+      <path d="M 264 214 L 264 274" />
+      <path d="M 264 214 L 286 214 C 298 214 308 223 308 235 C 308 247 298 256 286 256 L 264 256" />
+
+      <!-- Letter 'I' -->
+      <line x1="334" y1="214" x2="334" y2="274" />
+    </g>
+  </g>
+</svg>
