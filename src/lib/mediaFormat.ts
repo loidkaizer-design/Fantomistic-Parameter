@@ -178,15 +178,15 @@ export function isValidMediaUrl(url: string): boolean {
 }
 
 export const SUPPORTED_FORMATS_LIST = [
-  { name: "MP4", desc: "MPEG-4 Part 14 Video (H.264/H.265/AV1)", ext: ".mp4, .m4v", type: "Video" },
-  { name: "MP3", desc: "MPEG-1 Audio Layer III", ext: ".mp3", type: "Audio" },
-  { name: "MKV", desc: "Matroska Multimedia Container", ext: ".mkv", type: "Video" },
-  { name: "HLS / M3U8", desc: "HTTP Live Streaming Adaptive Playlists", ext: ".m3u8", type: "Stream" },
-  { name: "WebM", desc: "Open Web Media (VP8, VP9, AV1, Opus)", ext: ".webm, .weba", type: "Video / Audio" },
-  { name: "WAV", desc: "Waveform Audio File Format (Lossless)", ext: ".wav", type: "Audio" },
-  { name: "FLAC", desc: "Free Lossless Audio Codec", ext: ".flac", type: "Audio" },
-  { name: "AAC / M4A", desc: "Advanced Audio Coding", ext: ".aac, .m4a", type: "Audio" },
-  { name: "OGG / Opus", desc: "Ogg Vorbis & Opus Multimedia", ext: ".ogg, .ogv, .opus", type: "Video / Audio" },
-  { name: "MOV", desc: "Apple QuickTime Movie", ext: ".mov", type: "Video" },
-  { name: "TS", desc: "MPEG-2 Transport Stream Chunks", ext: ".ts", type: "Video" },
+  { name: "MP4", label: "MP4", category: "video" as const, desc: "MPEG-4 Part 14 Video (H.264/H.265/AV1)", ext: ".mp4, .m4v", type: "Video" },
+  { name: "MP3", label: "MP3", category: "audio" as const, desc: "MPEG-1 Audio Layer III", ext: ".mp3", type: "Audio" },
+  { name: "MKV", label: "MKV", category: "video" as const, desc: "Matroska Multimedia Container", ext: ".mkv", type: "Video" },
+  { name: "HLS / M3U8", label: "M3U8 / HLS", category: "stream" as const, desc: "HTTP Live Streaming Adaptive Playlists", ext: ".m3u8", type: "Stream" },
+  { name: "WebM", label: "WebM", category: "video" as const, desc: "Open Web Media (VP8, VP9, AV1, Opus)", ext: ".webm, .weba", type: "Video / Audio" },
+  { name: "WAV", label: "WAV", category: "audio" as const, desc: "Waveform Audio File Format (Lossless)", ext: ".wav", type: "Audio" },
+  { name: "FLAC", label: "FLAC", category: "audio" as const, desc: "Free Lossless Audio Codec", ext: ".flac", type: "Audio" },
+  { name: "AAC / M4A", label: "AAC / M4A", category: "audio" as const, desc: "Advanced Audio Coding", ext: ".aac, .m4a", type: "Audio" },
+  { name: "OGG / Opus", label: "OGG / Opus", category: "audio" as const, desc: "Ogg Vorbis & Opus Multimedia", ext: ".ogg, .ogv, .opus", type: "Video / Audio" },
+  { name: "MOV", label: "MOV", category: "video" as const, desc: "Apple QuickTime Movie", ext: ".mov", type: "Video" },
+  { name: "TS", label: "TS", category: "video" as const, desc: "MPEG-2 Transport Stream Chunks", ext: ".ts", type: "Video" },
 ];

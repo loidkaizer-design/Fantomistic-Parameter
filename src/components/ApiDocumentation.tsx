@@ -61,8 +61,8 @@ export function ApiDocumentation({ onNavigateHome, onSelectEmbed }: ApiDocumenta
 
   // Live tester state
   const [testParams, setTestParams] = useState<Record<string, string>>({
-    id: "1007757",
-    url: "https://idlink.lovable.app",
+    id: "intro",
+    url: "https://idlink-aggregator-iyimpryfxq-as.a.run.app/index/info",
     type: "play",
     page: "embed",
   });
@@ -192,33 +192,31 @@ print("Title:", movie_data.get("title"))`,
       id: "stream-proxy",
       method: "GET",
       path: "/api/stream/proxy",
-      title: "HLS M3U8 Manifest & Segment Proxy",
+      title: "Universal Media & HLS Stream Proxy",
       category: "Streams & Metadata",
       description:
-        "Bypasses CDN hotlink referer verification and browser CORS limits. Dynamically parses and rewrites M3U8 playlist segment URIs to route through the proxy, streaming binary chunks (.ts/.m4s) with Range support.",
+        "Bypasses CDN hotlink referer verification and browser CORS limits. Proxies MP4, MP3, MKV, WebM, and FLAC media chunks, as well as dynamically rewriting M3U8 adaptive playlist segment URIs with byte Range support.",
       parameters: [
         {
           name: "url",
           in: "query",
           type: "string",
           required: true,
-          description: "Full URL of the target M3U8 manifest or media chunk.",
-          defaultValue: "https://idlink.lovable.app/index/info",
+          description: "Full URL of the target media stream (MP4, MP3, MKV, M3U8, etc.).",
+          defaultValue: "https://idlink-aggregator-iyimpryfxq-as.a.run.app/index/info",
         },
       ],
-      curlExample: (baseUrl) => `curl -i "${baseUrl}/api/stream/proxy?url=https%3A%2F%2Fcdn.example.com%2Fstream.m3u8"`,
-      jsExample: (baseUrl) => `// Initialize HLS.js through proxy URL
-const proxyUrl = "${baseUrl}/api/stream/proxy?url=" + encodeURIComponent("https://cdn.example.com/master.m3u8");
-const hls = new Hls();
-hls.loadSource(proxyUrl);
-hls.attachMedia(videoElement);`,
+      curlExample: (baseUrl) => `curl -i "${baseUrl}/api/stream/proxy?url=https%3A%2F%2Fcdn.example.com%2Fvideo.mp4"`,
+      jsExample: (baseUrl) => `// Play video or audio through stream proxy
+const proxyUrl = "${baseUrl}/api/stream/proxy?url=" + encodeURIComponent("https://cdn.example.com/video.mp4");
+videoElement.src = proxyUrl;`,
       pythonExample: (baseUrl) => `import requests
 
 proxy_url = "${baseUrl}/api/stream/proxy"
-params = {"url": "https://cdn.example.com/master.m3u8"}
+params = {"url": "https://cdn.example.com/video.mp4"}
 r = requests.get(proxy_url, params=params)
 print("Content-Type:", r.headers.get("Content-Type"))`,
-      defaultTestParam: { url: "https://idlink.lovable.app/index/info" },
+      defaultTestParam: { url: "https://idlink-aggregator-iyimpryfxq-as.a.run.app/index/info" },
       testUrlGenerator: (baseUrl, params) => `${baseUrl}/api/stream/proxy?url=${encodeURIComponent(params.url || "")}`,
     },
     {
