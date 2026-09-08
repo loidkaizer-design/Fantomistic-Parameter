@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 import Plyr from "plyr";
-import { AlertTriangle, RefreshCw, ExternalLink } from "lucide-react";
+import { AlertTriangle, RefreshCw, ExternalLink, Download, Music, Film, Disc } from "lucide-react";
 import { trackVideoEvent } from "../lib/analytics";
 import { fetchTmdbMedia, TmdbMedia } from "../lib/tmdb";
 import { FantomismLoader } from "./FantomismLoader";
+import { detectMediaFormat, isValidMediaUrl, MediaFormatInfo } from "../lib/mediaFormat";
 
 interface PlyrVideoPlayerProps {
   streamUrl: string;
@@ -26,14 +27,17 @@ export function PlyrVideoPlayer({
   const hlsRef = useRef<Hls | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [media, setMedia] = useState<TmdbMedia | null>(null);
   const [loadingMedia, setLoadingMedia] = useState<boolean>(false);
   const [mouseActive, setMouseActive] = useState<boolean>(true);
   const mouseTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const formatInfo: MediaFormatInfo = detectMediaFormat(streamUrl);
+
   // Fetch TMDB Movie/TV Title and Poster Image using ID
   useEffect(() => {
-    if (!id) {
+    if (!id || formatInfo.isAudio) {
       setMedia(null);
       return;
     }
@@ -57,7 +61,7 @@ export function PlyrVideoPlayer({
     return () => {
       isMounted = false;
     };
-  }, [id]);
+  }, [id, formatInfo.isAudio]);
 
   // Smooth hover/mouse movement behavior for overlays in full-page mode
   const handleMouseMove = () => {
@@ -68,26 +72,28 @@ export function PlyrVideoPlayer({
     }, 3500);
   };
 
-  // Validate if URL is a valid M3U8 / HLS stream
-  const isValidM3u8 = (url: string) => {
-    if (!url || typeof url !== "string") return false;
-    const lower = url.toLowerCase();
-    return (
-      lower.includes(".m3u8") ||
-      lower.includes("/vd/") ||
-      lower.includes("hls") ||
-      lower.includes("/api/stream/proxy")
-    );
-  };
-
   const getPlayableUrl = (url: string) => {
     if (!url) return url;
     if (url.startsWith("/api/stream/proxy")) return url;
-    // Proxy external HLS streams to bypass CDN hotlink 403 blocks
+    // Proxy external streams to bypass CDN hotlink 403 blocks and CORS restrictions
     if (url.startsWith("http://") || url.startsWith("https://")) {
       return `/api/stream/proxy?url=${encodeURIComponent(url)}`;
     }
     return url;
+  };
+
+  const reloadStream = () => {
+    setError(null);
+    setLoading(true);
+    const video = videoRef.current;
+    const effectiveUrl = getPlayableUrl(streamUrl);
+
+    if (formatInfo.isHls && hlsRef.current) {
+      hlsRef.current.loadSource(effectiveUrl);
+    } else if (video) {
+      video.src = effectiveUrl;
+      video.load();
+    }
   };
 
   useEffect(() => {
@@ -101,10 +107,10 @@ export function PlyrVideoPlayer({
       return;
     }
 
-    if (!isValidM3u8(streamUrl)) {
-      setError("Invalid M3U8 stream: The returned URL is not a valid HLS/M3U8 playlist.");
+    if (!isValidMediaUrl(streamUrl)) {
+      setError("Unsupported media format: The provided URL is not a recognized video or audio stream.");
       setLoading(false);
-      trackVideoEvent("error", id, { message: "Invalid M3U8 stream", streamUrl });
+      trackVideoEvent("error", id, { message: "Unsupported media format", streamUrl });
       return;
     }
 
@@ -147,16 +153,19 @@ export function PlyrVideoPlayer({
     player = new Plyr(video, plyrOptions);
     playerRef.current = player;
 
-    // Analytics event listeners for video playback
+    // Playback state tracking
     player.on("play", () => {
+      setIsPlaying(true);
       trackVideoEvent("play", id, { currentTime: player?.currentTime });
     });
 
     player.on("pause", () => {
+      setIsPlaying(false);
       trackVideoEvent("pause", id, { currentTime: player?.currentTime });
     });
 
     player.on("ended", () => {
+      setIsPlaying(false);
       trackVideoEvent("complete", id);
       if (onEnded) onEnded();
     });
@@ -168,58 +177,97 @@ export function PlyrVideoPlayer({
       trackVideoEvent("error", id, { details: "Plyr playback error" });
     });
 
-    if (Hls.isSupported()) {
-      hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        capLevelToPlayerSize: true,
-      });
+    // Handle HLS streams
+    if (formatInfo.isHls) {
+      if (Hls.isSupported()) {
+        hls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: true,
+          capLevelToPlayerSize: true,
+        });
 
-      hls.loadSource(effectiveUrl);
-      hls.attachMedia(video);
+        hls.loadSource(effectiveUrl);
+        hls.attachMedia(video);
 
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          setLoading(false);
+          setError(null);
+        });
+
+        hls.on(Hls.Events.ERROR, (_event, data) => {
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                console.warn("HLS fatal network error, attempting recovery...", data);
+                hls?.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                console.warn("HLS fatal media error, attempting recovery...", data);
+                hls?.recoverMediaError();
+                break;
+              default:
+                console.error("Fatal unrecoverable HLS error:", data);
+                setError("Stream failed to load. The M3U8 source or segments could not be fetched.");
+                setLoading(false);
+                trackVideoEvent("error", id, { fatalError: data.details });
+                hls?.destroy();
+                break;
+            }
+          }
+        });
+
+        hlsRef.current = hls;
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        // Native Apple Safari HLS
+        video.src = effectiveUrl;
+        video.addEventListener("loadedmetadata", () => {
+          setLoading(false);
+        });
+        video.addEventListener("error", () => {
+          setError("Error loading M3U8 stream in native player.");
+          setLoading(false);
+          trackVideoEvent("error", id, { message: "Native HLS error" });
+        });
+      } else {
+        setError("Your browser does not support HLS/M3U8 video playback.");
+        setLoading(false);
+      }
+    } else {
+      // Direct media streams: MP4, MP3, MKV, WebM, WAV, FLAC, AAC, MOV, OGG, etc.
+      video.src = effectiveUrl;
+      video.load();
+
+      const handleLoaded = () => {
         setLoading(false);
         setError(null);
-      });
+      };
 
-      hls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              console.warn("HLS fatal network error, attempting recovery...", data);
-              hls?.startLoad();
-              break;
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              console.warn("HLS fatal media error, attempting recovery...", data);
-              hls?.recoverMediaError();
-              break;
-            default:
-              console.error("Fatal unrecoverable HLS error:", data);
-              setError("Stream failed to load. The M3U8 source or segments could not be fetched.");
-              setLoading(false);
-              trackVideoEvent("error", id, { fatalError: data.details });
-              hls?.destroy();
-              break;
-          }
+      const handleDirectError = () => {
+        const mediaErr = video.error;
+        let msg = `Playback error: Unable to play this ${formatInfo.badge} file.`;
+        if (mediaErr?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) {
+          msg = `Codec unsupported: Your browser cannot decode this ${formatInfo.badge} stream natively. Some MKV files require external codecs.`;
+        } else if (mediaErr?.code === MediaError.MEDIA_ERR_NETWORK) {
+          msg = `Network error: Connection to media stream was lost.`;
         }
-      });
+        setError(msg);
+        setLoading(false);
+        trackVideoEvent("error", id, { message: msg, code: mediaErr?.code });
+      };
 
-      hlsRef.current = hls;
-    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      // Native Apple Safari HLS
-      video.src = effectiveUrl;
-      video.addEventListener("loadedmetadata", () => {
-        setLoading(false);
-      });
-      video.addEventListener("error", () => {
-        setError("Error loading M3U8 stream in native player.");
-        setLoading(false);
-        trackVideoEvent("error", id, { message: "Native HLS error" });
-      });
-    } else {
-      setError("Your browser does not support HLS/M3U8 video playback.");
-      setLoading(false);
+      video.addEventListener("loadedmetadata", handleLoaded);
+      video.addEventListener("canplay", handleLoaded);
+      video.addEventListener("error", handleDirectError);
+
+      return () => {
+        video.removeEventListener("loadedmetadata", handleLoaded);
+        video.removeEventListener("canplay", handleLoaded);
+        video.removeEventListener("error", handleDirectError);
+        if (player) {
+          player.destroy();
+          playerRef.current = null;
+        }
+      };
     }
 
     return () => {
@@ -232,7 +280,7 @@ export function PlyrVideoPlayer({
         playerRef.current = null;
       }
     };
-  }, [streamUrl, autoPlay, id, onEnded]);
+  }, [streamUrl, autoPlay, id, onEnded, formatInfo.isHls, formatInfo.badge]);
 
   const wrapperClass = fullPage
     ? "relative w-screen h-screen max-w-none max-h-none rounded-none border-0 shadow-none m-0 p-0 overflow-hidden flex items-center justify-center select-none plyr-full-page bg-black"
@@ -241,7 +289,15 @@ export function PlyrVideoPlayer({
   const posterImage = media?.backdropUrl || media?.posterUrl;
   const displayTitle =
     media?.title ||
-    (loadingMedia ? "Fetching Title..." : id ? `ID: ${id}` : "Stream Playback");
+    (loadingMedia
+      ? "Fetching Title..."
+      : id
+      ? `ID: ${id}`
+      : formatInfo.name);
+
+  const downloadUrl = `/api/stream/download?url=${encodeURIComponent(
+    streamUrl
+  )}&id=${encodeURIComponent(id || "media")}`;
 
   return (
     <div
@@ -256,7 +312,7 @@ export function PlyrVideoPlayer({
       )}
 
       {/* Blurred Poster Background While Loading */}
-      {posterImage && (
+      {posterImage && !formatInfo.isAudio && (
         <div
           className={`absolute inset-0 overflow-hidden pointer-events-none transition-opacity duration-1000 ease-out z-10 ${
             loading ? "opacity-100" : "opacity-0 -z-10"
@@ -271,7 +327,7 @@ export function PlyrVideoPlayer({
         </div>
       )}
 
-      {/* Top-left Overlay: TMDB Movie/Show Title Badge (Replaces "LIVE") */}
+      {/* Top-left Overlay: Format badge + Title */}
       <div
         className={`absolute top-3.5 left-3.5 z-30 flex items-center gap-2 transition-all duration-500 ease-out ${
           fullPage && !mouseActive && !loading
@@ -284,7 +340,7 @@ export function PlyrVideoPlayer({
           title={
             media?.title
               ? `${media.title}${media.releaseYear ? ` (${media.releaseYear})` : ""}`
-              : undefined
+              : `${displayTitle} • ${formatInfo.name}`
           }
         >
           <span className="relative flex h-2 w-2 shrink-0">
@@ -303,11 +359,13 @@ export function PlyrVideoPlayer({
             </>
           )}
           <span className="text-white/30 text-[10px]">|</span>
-          <span className="text-white/90 text-[11px] font-mono shrink-0">1080p</span>
+          <span className="text-white font-mono text-[10px] sm:text-[11px] font-bold tracking-wider px-1.5 py-0.5 rounded bg-white/10 border border-white/20 shrink-0 uppercase">
+            {formatInfo.badge}
+          </span>
         </div>
       </div>
 
-      {/* Top-right Overlay: Stream ID Pill & Reload Action */}
+      {/* Top-right Overlay: Stream ID Pill, Download & Reload Action */}
       <div
         className={`absolute top-3.5 right-3.5 z-30 flex items-center gap-1.5 transition-all duration-500 ease-out ${
           fullPage && !mouseActive && !loading
@@ -320,15 +378,17 @@ export function PlyrVideoPlayer({
             ID: {id}
           </span>
         )}
+        <a
+          href={downloadUrl}
+          download
+          className="p-1.5 rounded-full bg-black/90 hover:bg-white text-neutral-300 hover:text-black backdrop-blur-md border border-white/20 hover:border-white transition-all shadow-md cursor-pointer"
+          title={`Download ${formatInfo.badge} media`}
+        >
+          <Download className="w-3.5 h-3.5" />
+        </a>
         <button
           id={`reload-stream-btn-${id || "main"}`}
-          onClick={() => {
-            setError(null);
-            setLoading(true);
-            if (hlsRef.current) {
-              hlsRef.current.loadSource(getPlayableUrl(streamUrl));
-            }
-          }}
+          onClick={reloadStream}
           className="p-1.5 rounded-full bg-black/90 hover:bg-white text-neutral-300 hover:text-black backdrop-blur-md border border-white/20 hover:border-white transition-all shadow-md cursor-pointer"
           title="Reload stream"
         >
@@ -336,6 +396,7 @@ export function PlyrVideoPlayer({
         </button>
       </div>
 
+      {/* Error state overlay */}
       {error ? (
         <div className="flex flex-col items-center justify-center p-6 text-center max-w-lg z-20 bg-black/95 border border-white/20 rounded-2xl m-4 shadow-2xl backdrop-blur-md">
           <div className="w-12 h-12 rounded-full bg-neutral-900 border border-white/20 flex items-center justify-center mb-3 text-white">
@@ -343,24 +404,28 @@ export function PlyrVideoPlayer({
           </div>
           <p className="text-sm font-semibold text-white mb-1">Playback Error</p>
           <p className="text-xs text-neutral-400 mb-3 leading-relaxed">{error}</p>
-          <p className="text-[11px] font-mono text-neutral-300 bg-neutral-900 border border-white/10 px-3 py-1 rounded-lg mb-4 truncate max-w-sm">
-            {streamUrl}
-          </p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 text-[11px] font-mono text-neutral-300 bg-neutral-900 border border-white/10 px-3 py-1 rounded-lg mb-4 truncate max-w-sm">
+            <span className="font-bold text-white uppercase">{formatInfo.badge}</span>
+            <span className="text-neutral-500">•</span>
+            <span className="truncate">{streamUrl}</span>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2">
             <button
               id="retry-playback-btn"
-              onClick={() => {
-                setError(null);
-                setLoading(true);
-                if (hlsRef.current) {
-                  hlsRef.current.loadSource(getPlayableUrl(streamUrl));
-                }
-              }}
+              onClick={reloadStream}
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-black bg-white hover:bg-neutral-200 rounded-xl transition-all shadow-md cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Retry Stream
             </button>
+            <a
+              href={downloadUrl}
+              download
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-neutral-900 hover:bg-neutral-800 border border-white/25 rounded-xl transition-all shadow-md cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Download {formatInfo.badge}
+            </a>
             <a
               href={streamUrl}
               target="_blank"
@@ -368,11 +433,64 @@ export function PlyrVideoPlayer({
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-white hover:text-white bg-neutral-900 hover:bg-neutral-800 border border-white/15 rounded-xl transition-colors"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              Open Direct URL
+              Direct URL
             </a>
           </div>
         </div>
       ) : null}
+
+      {/* Audio Visualizer Mode for MP3, WAV, FLAC, AAC, etc. */}
+      {formatInfo.isAudio && !error && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center pointer-events-none p-6 bg-radial from-neutral-900/60 to-black select-none">
+          <div className="relative mb-6 flex items-center justify-center">
+            {/* Spinning subtle vinyl ring */}
+            <div
+              className={`w-36 h-36 sm:w-44 sm:h-44 rounded-full border border-white/20 bg-neutral-950/80 shadow-[0_0_50px_rgba(255,255,255,0.08)] flex items-center justify-center transition-transform duration-1000 ${
+                isPlaying ? "animate-[spin_6s_linear_infinite]" : ""
+              }`}
+            >
+              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-full border border-white/10 flex items-center justify-center">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full border border-white/25 bg-neutral-900 flex items-center justify-center">
+                  <Disc className="w-8 h-8 text-white/80" />
+                </div>
+              </div>
+            </div>
+            {/* Pulsing center icon */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <Music className="w-7 h-7 text-white" />
+            </div>
+          </div>
+
+          <div className="text-center max-w-md">
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-white/10 border border-white/20 text-white font-mono text-[11px] uppercase tracking-wider mb-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+              {formatInfo.name}
+            </div>
+            <h3 className="text-base sm:text-lg font-bold text-white tracking-tight truncate">
+              {displayTitle}
+            </h3>
+            <p className="text-xs text-neutral-400 font-mono mt-1">
+              {id ? `Audio Track ID: ${id}` : "Audio Playback"}
+            </p>
+          </div>
+
+          {/* Equalizer waveform bars animation */}
+          <div className="flex items-end gap-1.5 h-8 mt-5">
+            {[40, 75, 100, 60, 85, 45, 90, 70, 95, 50, 80, 65].map((h, i) => (
+              <span
+                key={i}
+                className="w-1 bg-white/80 rounded-full transition-all duration-300"
+                style={{
+                  height: isPlaying ? `${h}%` : "20%",
+                  animation: isPlaying
+                    ? `pulse 1.${(i % 5) + 2}s infinite alternate ease-in-out`
+                    : "none",
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className={`w-full h-full ${error ? "hidden" : "block"}`}>
         <video
@@ -389,13 +507,13 @@ export function PlyrVideoPlayer({
             label={
               <div className="inline-flex items-center justify-center flex-wrap gap-x-2 gap-y-1 font-mono text-xs sm:text-sm uppercase tracking-wider select-none">
                 <span className="text-white font-semibold">
-                  {media?.title || (id ? `ID: ${id}` : "Stream")}
+                  {media?.title || (id ? `ID: ${id}` : formatInfo.name)}
                 </span>
                 <span className="animate-blinking text-white text-[10px] sm:text-xs leading-none">
                   ●
                 </span>
                 <span className="shining-ltr font-bold tracking-widest text-white">
-                  1080p HD
+                  {formatInfo.badge}
                 </span>
               </div>
             }
@@ -403,8 +521,8 @@ export function PlyrVideoPlayer({
               media?.releaseYear
                 ? `TMDB • ${media.releaseYear} • ID: ${id || "Stream"}`
                 : id
-                ? `Stream ID: ${id}`
-                : undefined
+                ? `Media ID: ${id}`
+                : `${formatInfo.name}`
             }
             scale={1.25}
           />

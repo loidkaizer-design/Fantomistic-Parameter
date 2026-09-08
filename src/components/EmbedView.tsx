@@ -6,6 +6,7 @@ import { trackPageView } from "../lib/analytics";
 import { fetchTmdbMedia, TmdbMedia } from "../lib/tmdb";
 import { FantomismLoader } from "./FantomismLoader";
 import { PhrasesGJM } from "./PhrasesGJM";
+import { isValidMediaUrl } from "../lib/mediaFormat";
 
 interface EmbedViewProps {
   id: string;
@@ -17,17 +18,6 @@ export function EmbedView({ id }: EmbedViewProps) {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [tmdbMedia, setTmdbMedia] = useState<TmdbMedia | null>(null);
-
-  const isValidM3u8Url = (url: string) => {
-    if (!url || typeof url !== "string") return false;
-    const lower = url.toLowerCase();
-    return (
-      lower.includes(".m3u8") ||
-      lower.includes("/vd/") ||
-      lower.includes("hls") ||
-      lower.includes("/api/stream/proxy")
-    );
-  };
 
   const fetchLookup = async () => {
     if (!id) return;
@@ -56,9 +46,9 @@ export function EmbedView({ id }: EmbedViewProps) {
         return;
       }
 
-      if (!json.url || !isValidM3u8Url(json.url)) {
+      if (!json.url || !isValidMediaUrl(json.url)) {
         setError(
-          `Content could not be loaded: The returned URL is not a valid M3U8/HLS stream.`
+          `Content could not be loaded: The returned URL is not a supported media format.`
         );
         setData(json);
         return;
@@ -108,7 +98,7 @@ export function EmbedView({ id }: EmbedViewProps) {
     );
   }
 
-  if (error || !data?.found || !data?.url || !isValidM3u8Url(data.url)) {
+  if (error || !data?.found || !data?.url || !isValidMediaUrl(data.url)) {
     const poster = tmdbMedia?.backdropUrl || tmdbMedia?.posterUrl;
     return (
       <div className="relative w-screen h-screen bg-black flex items-center justify-center p-4 text-center overflow-hidden">

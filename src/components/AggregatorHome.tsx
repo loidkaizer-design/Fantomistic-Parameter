@@ -22,10 +22,14 @@ import {
   CheckCircle2,
   AlertTriangle,
   BookOpen,
+  Download,
+  Film,
+  Music,
 } from "lucide-react";
 import { PlyrVideoPlayer } from "./PlyrVideoPlayer";
 import { FantomismLoader } from "./FantomismLoader";
 import { trackPageView, getAnalyticsStats, AnalyticsStats } from "../lib/analytics";
+import { detectMediaFormat, SUPPORTED_FORMATS_LIST } from "../lib/mediaFormat";
 
 interface AggregatorHomeProps {
   onSelectEmbed: (id: string) => void;
@@ -145,11 +149,11 @@ export function AggregatorHome({ onSelectEmbed, onNavigateDocs }: AggregatorHome
                 </span>
                 <span className="hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium bg-neutral-900 text-neutral-300 border border-white/20">
                   <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                  idlink.lovable.app
+                  idlink-aggregator-iyimpryfxq-as.a.run.app
                 </span>
               </div>
               <p className="text-[11px] text-neutral-400">
-                Service outputs from <code className="font-mono text-neutral-300">/index/info</code>
+                Universal player & aggregator engine • <code className="font-mono text-neutral-300">/index/info</code>
               </p>
             </div>
           </div>
@@ -312,11 +316,16 @@ export function AggregatorHome({ onSelectEmbed, onNavigateDocs }: AggregatorHome
         <section className="bg-black border border-white/20 rounded-2xl p-4 sm:p-6 shadow-xl relative overflow-hidden">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 relative z-10">
             <div>
-              <h2 className="text-base sm:text-lg font-semibold text-white mb-1">
-                Open Stream Embed Route
-              </h2>
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-base sm:text-lg font-semibold text-white">
+                  Open Stream Embed Route
+                </h2>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/10 text-white border border-white/20 uppercase font-semibold">
+                  Multi-Format
+                </span>
+              </div>
               <p className="text-xs sm:text-sm text-neutral-400">
-                Route to <code className="font-mono text-neutral-200">/embed/(ID)</code> with live backend lookup and Plyr HLS playback.
+                Route to <code className="font-mono text-neutral-200">/embed/(ID)</code> with live backend proxying for MP4, MP3, MKV, HLS, WebM, FLAC, and more.
                 {onNavigateDocs && (
                   <button
                     onClick={onNavigateDocs}
@@ -335,7 +344,7 @@ export function AggregatorHome({ onSelectEmbed, onNavigateDocs }: AggregatorHome
                 <input
                   id="lookup-id-input"
                   type="text"
-                  placeholder="Enter stream ID (e.g. 860508)"
+                  placeholder="Enter stream ID (e.g. intro, 860508)"
                   value={searchId}
                   onChange={(e) => setSearchId(e.target.value)}
                   className="w-full bg-neutral-950 border border-white/20 focus:border-white pl-9 pr-3 py-2 text-sm text-white placeholder-neutral-500 rounded-xl focus:outline-none transition-all font-mono"
@@ -349,6 +358,26 @@ export function AggregatorHome({ onSelectEmbed, onNavigateDocs }: AggregatorHome
                 Go to Embed
               </button>
             </form>
+          </div>
+
+          {/* Supported Format Pills */}
+          <div className="mt-4 pt-3.5 border-t border-white/10 flex items-center flex-wrap gap-2 text-xs">
+            <span className="text-[11px] text-neutral-400 font-medium">Supported Streams:</span>
+            {SUPPORTED_FORMATS_LIST.slice(0, 8).map((fmt) => (
+              <span
+                key={fmt.ext}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-neutral-950 text-neutral-200 border border-white/15 text-[10px] font-mono hover:border-white/40 transition-colors"
+                title={`${fmt.label} (${fmt.category})`}
+              >
+                {fmt.category === "audio" ? (
+                  <Music className="w-2.5 h-2.5 text-neutral-400" />
+                ) : (
+                  <Film className="w-2.5 h-2.5 text-neutral-400" />
+                )}
+                <span>{fmt.label}</span>
+              </span>
+            ))}
+            <span className="text-[10px] font-mono text-neutral-400">+ more</span>
           </div>
         </section>
 
@@ -475,7 +504,11 @@ export function AggregatorHome({ onSelectEmbed, onNavigateDocs }: AggregatorHome
                   </thead>
                   <tbody className="divide-y divide-white/10 font-mono">
                     {data.topEntries?.map((entry: TopEntry) => {
-                      const validM3u8 = isM3u8Stream(entry.url);
+                      const fmt = detectMediaFormat(entry.url);
+                      const downloadUrl = `/api/stream/download?url=${encodeURIComponent(
+                        entry.url
+                      )}&id=${encodeURIComponent(entry.key)}`;
+
                       return (
                         <tr key={entry.key} className="hover:bg-neutral-900/40 transition-colors group">
                           <td className="py-3 pr-3">
@@ -483,15 +516,17 @@ export function AggregatorHome({ onSelectEmbed, onNavigateDocs }: AggregatorHome
                               <span className="font-semibold text-white bg-neutral-900 px-2 py-0.5 rounded border border-white/20">
                                 {entry.key}
                               </span>
-                              {!validM3u8 && (
-                                <span
-                                  className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900 text-neutral-300 border border-white/20 flex items-center gap-1 font-sans"
-                                  title="URL format is not standard M3U8"
-                                >
-                                  <AlertTriangle className="w-2.5 h-2.5" />
-                                  Non-M3U8
-                                </span>
-                              )}
+                              <span
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900 text-neutral-300 border border-white/20 flex items-center gap-1 font-mono uppercase"
+                                title={`Format: ${fmt.name}`}
+                              >
+                                {fmt.isAudio ? (
+                                  <Music className="w-2.5 h-2.5 text-neutral-400" />
+                                ) : (
+                                  <Film className="w-2.5 h-2.5 text-neutral-400" />
+                                )}
+                                {fmt.badge}
+                              </span>
                             </div>
                           </td>
                           <td className="py-3 px-3 text-center">
@@ -512,6 +547,15 @@ export function AggregatorHome({ onSelectEmbed, onNavigateDocs }: AggregatorHome
                               >
                                 <Play className="w-3.5 h-3.5 fill-current" />
                               </button>
+                              <a
+                                id={`download-top-${entry.key}`}
+                                href={downloadUrl}
+                                download
+                                className="p-1.5 rounded-lg border border-white/15 hover:border-white/30 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                                title={`Download ${fmt.badge} stream`}
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </a>
                               <button
                                 id={`embed-top-${entry.key}`}
                                 onClick={() => onSelectEmbed(entry.key)}
@@ -566,60 +610,90 @@ export function AggregatorHome({ onSelectEmbed, onNavigateDocs }: AggregatorHome
                   <thead>
                     <tr className="border-b border-white/15 text-neutral-400 font-mono text-[11px]">
                       <th className="pb-3 font-medium">Key (ID)</th>
+                      <th className="pb-3 font-medium">Format</th>
                       <th className="pb-3 font-medium">Created Time</th>
                       <th className="pb-3 font-medium hidden md:table-cell">Target Stream URL</th>
                       <th className="pb-3 font-medium text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/10 font-mono">
-                    {data.latestEntries?.map((entry: LatestEntry) => (
-                      <tr key={entry.key} className="hover:bg-neutral-900/40 transition-colors group">
-                        <td className="py-3 pr-3">
-                          <span className="font-semibold text-white bg-neutral-900 px-2 py-0.5 rounded border border-white/20">
-                            {entry.key}
-                          </span>
-                        </td>
-                        <td className="py-3 px-3 text-neutral-300 font-sans text-xs">
-                          {entry.created_at ? new Date(entry.created_at).toLocaleString() : "Unknown"}
-                        </td>
-                        <td className="py-3 px-3 text-neutral-400 truncate max-w-xs hidden md:table-cell" title={entry.url}>
-                          {entry.url}
-                        </td>
-                        <td className="py-3 pl-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              id={`preview-latest-${entry.key}`}
-                              onClick={() => setPreviewItem({ id: entry.key, url: entry.url })}
-                              className="p-1.5 rounded-lg border border-white/20 bg-neutral-950 hover:bg-white hover:text-black text-white transition-colors cursor-pointer"
-                              title="Preview Player Inline"
+                    {data.latestEntries?.map((entry: LatestEntry) => {
+                      const fmt = detectMediaFormat(entry.url);
+                      const downloadUrl = `/api/stream/download?url=${encodeURIComponent(
+                        entry.url
+                      )}&id=${encodeURIComponent(entry.key)}`;
+
+                      return (
+                        <tr key={entry.key} className="hover:bg-neutral-900/40 transition-colors group">
+                          <td className="py-3 pr-3">
+                            <span className="font-semibold text-white bg-neutral-900 px-2 py-0.5 rounded border border-white/20">
+                              {entry.key}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-900 text-neutral-300 border border-white/20 inline-flex items-center gap-1 font-mono uppercase"
+                              title={`Format: ${fmt.name}`}
                             >
-                              <Play className="w-3.5 h-3.5 fill-current" />
-                            </button>
-                            <button
-                              id={`embed-latest-${entry.key}`}
-                              onClick={() => onSelectEmbed(entry.key)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white hover:bg-neutral-200 text-black font-sans text-xs font-semibold shadow-sm transition-all cursor-pointer"
-                              title="Open in /embed/:id route"
-                            >
-                              <span>/embed/{entry.key}</span>
-                              <ChevronRight className="w-3 h-3" />
-                            </button>
-                            <button
-                              id={`copy-latest-${entry.key}`}
-                              onClick={() => handleCopyEmbed(entry.key)}
-                              className="p-1.5 rounded-lg border border-white/15 hover:border-white/30 text-neutral-300 hover:text-white transition-colors cursor-pointer"
-                              title="Copy Embed Iframe"
-                            >
-                              {copiedKey === entry.key ? (
-                                <Check className="w-3.5 h-3.5 text-white" />
+                              {fmt.isAudio ? (
+                                <Music className="w-2.5 h-2.5 text-neutral-400" />
                               ) : (
-                                <Copy className="w-3.5 h-3.5" />
+                                <Film className="w-2.5 h-2.5 text-neutral-400" />
                               )}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                              {fmt.badge}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-neutral-300 font-sans text-xs">
+                            {entry.created_at ? new Date(entry.created_at).toLocaleString() : "Unknown"}
+                          </td>
+                          <td className="py-3 px-3 text-neutral-400 truncate max-w-xs hidden md:table-cell" title={entry.url}>
+                            {entry.url}
+                          </td>
+                          <td className="py-3 pl-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                id={`preview-latest-${entry.key}`}
+                                onClick={() => setPreviewItem({ id: entry.key, url: entry.url })}
+                                className="p-1.5 rounded-lg border border-white/20 bg-neutral-950 hover:bg-white hover:text-black text-white transition-colors cursor-pointer"
+                                title="Preview Player Inline"
+                              >
+                                <Play className="w-3.5 h-3.5 fill-current" />
+                              </button>
+                              <a
+                                id={`download-latest-${entry.key}`}
+                                href={downloadUrl}
+                                download
+                                className="p-1.5 rounded-lg border border-white/15 hover:border-white/30 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                                title={`Download ${fmt.badge} stream`}
+                              >
+                                <Download className="w-3.5 h-3.5" />
+                              </a>
+                              <button
+                                id={`embed-latest-${entry.key}`}
+                                onClick={() => onSelectEmbed(entry.key)}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white hover:bg-neutral-200 text-black font-sans text-xs font-semibold shadow-sm transition-all cursor-pointer"
+                                title="Open in /embed/:id route"
+                              >
+                                <span>/embed/{entry.key}</span>
+                                <ChevronRight className="w-3 h-3" />
+                              </button>
+                              <button
+                                id={`copy-latest-${entry.key}`}
+                                onClick={() => handleCopyEmbed(entry.key)}
+                                className="p-1.5 rounded-lg border border-white/15 hover:border-white/30 text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                                title="Copy Embed Iframe"
+                              >
+                                {copiedKey === entry.key ? (
+                                  <Check className="w-3.5 h-3.5 text-white" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

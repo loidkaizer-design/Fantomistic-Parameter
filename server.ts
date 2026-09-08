@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 
-const UPSTREAM_BASE = "https://idlink.lovable.app";
+const UPSTREAM_BASE = process.env.UPSTREAM_BASE_URL || "https://idlink-aggregator-iyimpryfxq-as.a.run.app";
 
 interface AnalyticsEvent {
   id: string;
@@ -45,10 +45,10 @@ async function startServer() {
       title: "Fantomistic Player API",
       version: "1.0.0",
       description:
-        "Public API documentation for Fantomistic Player — an adaptive HLS stream aggregator, TMDB media enrichment resolver, and responsive embeddable player.",
+        "Public API documentation for Fantomistic Player — an adaptive multi-format (MP4, MP3, MKV, HLS/M3U8, WebM, and more) stream aggregator, TMDB media enrichment resolver, and responsive embeddable player.",
       contact: {
         name: "Fantomistic Player Support",
-        url: "https://idlink.lovable.app",
+        url: "https://idlink-aggregator-iyimpryfxq-as.a.run.app",
       },
     },
     servers: [
@@ -495,6 +495,19 @@ async function startServer() {
       });
     }
 
+    // Direct media URL support (e.g. user enters direct MP4, MP3, MKV, M3U8, or WebM URL)
+    if (id.startsWith("http://") || id.startsWith("https://")) {
+      const urlObj = new URL(id);
+      const filename = path.basename(urlObj.pathname) || "media-stream";
+      res.setHeader("Cache-Control", "public, max-age=300");
+      return res.json({
+        found: true,
+        id,
+        url: id,
+        title: decodeURIComponent(filename),
+      });
+    }
+
     try {
       const targetUrl = `${UPSTREAM_BASE}/api/public/lookup?id=${encodeURIComponent(id)}`;
       const response = await fetch(targetUrl, {
@@ -525,7 +538,48 @@ async function startServer() {
     }
   });
 
-  // Stream proxy endpoint to bypass hotlink referer protection on CDN
+  // Helper to infer media Content-Type from URL extension
+  const inferContentType = (urlStr: string, currentHeader?: string | null): string => {
+    if (
+      currentHeader &&
+      currentHeader !== "application/octet-stream" &&
+      currentHeader !== "text/plain" &&
+      currentHeader !== "binary/octet-stream"
+    ) {
+      return currentHeader;
+    }
+    const clean = urlStr.split("?")[0].split("#")[0].toLowerCase();
+    if (clean.endsWith(".mp4") || clean.endsWith(".m4v")) return "video/mp4";
+    if (clean.endsWith(".mp3")) return "audio/mpeg";
+    if (clean.endsWith(".mkv")) return "video/x-matroska";
+    if (clean.endsWith(".webm")) return "video/webm";
+    if (clean.endsWith(".weba")) return "audio/webm";
+    if (clean.endsWith(".wav")) return "audio/wav";
+    if (clean.endsWith(".flac")) return "audio/flac";
+    if (clean.endsWith(".aac")) return "audio/aac";
+    if (clean.endsWith(".m4a")) return "audio/mp4";
+    if (clean.endsWith(".ogg") || clean.endsWith(".ogv")) return "video/ogg";
+    if (clean.endsWith(".oga") || clean.endsWith(".opus")) return "audio/ogg";
+    if (clean.endsWith(".mov")) return "video/quicktime";
+    if (clean.endsWith(".ts")) return "video/mp2t";
+    if (clean.endsWith(".m3u8")) return "application/vnd.apple.mpegurl";
+    return currentHeader || "application/octet-stream";
+  };
+
+  // Helper to infer file extension from URL
+  const inferExtension = (urlStr: string): string => {
+    const clean = urlStr.split("?")[0].split("#")[0].toLowerCase();
+    const exts = [
+      "mp4", "mp3", "mkv", "webm", "weba", "wav", "flac", "aac",
+      "m4a", "ogg", "ogv", "oga", "opus", "mov", "ts", "m3u8"
+    ];
+    for (const ext of exts) {
+      if (clean.endsWith(`.${ext}`)) return ext;
+    }
+    return clean.includes(".m3u8") ? "m3u8" : "mp4";
+  };
+
+  // Stream proxy endpoint to bypass hotlink referer protection and CORS limits
   app.get("/api/stream/proxy", async (req, res) => {
     const targetUrl = req.query.url as string;
     if (!targetUrl || typeof targetUrl !== "string") {
@@ -539,7 +593,7 @@ async function startServer() {
       }
 
       const forwardHeaders: Record<string, string> = {
-        Referer: "https://idlink.lovable.app/",
+        Referer: `${parsedUrl.origin}/`,
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         Accept: "*/*",
@@ -559,7 +613,8 @@ async function startServer() {
           .send(`Upstream stream returned ${upstreamRes.status}`);
       }
 
-      const contentType = upstreamRes.headers.get("content-type") || "";
+      const rawContentType = upstreamRes.headers.get("content-type") || "";
+      const contentType = inferContentType(targetUrl, rawContentType);
       const isM3u8 =
         targetUrl.includes(".m3u8") ||
         contentType.includes("mpegurl") ||
@@ -599,15 +654,15 @@ async function startServer() {
         return res.send(rewrittenLines.join("\n"));
       }
 
-      // Binary media chunk (ts, m4s, mp4)
+      // Binary media chunk (ts, m4s, mp4, mp3, mkv, webm, flac, etc.)
       res.status(upstreamRes.status);
-      if (contentType) res.setHeader("Content-Type", contentType);
+      res.setHeader("Content-Type", contentType);
       const contentLength = upstreamRes.headers.get("content-length");
       if (contentLength) res.setHeader("Content-Length", contentLength);
       const contentRange = upstreamRes.headers.get("content-range");
       if (contentRange) res.setHeader("Content-Range", contentRange);
-      const acceptRanges = upstreamRes.headers.get("accept-ranges");
-      if (acceptRanges) res.setHeader("Accept-Ranges", acceptRanges);
+      const acceptRanges = upstreamRes.headers.get("accept-ranges") || "bytes";
+      res.setHeader("Accept-Ranges", acceptRanges);
 
       if (upstreamRes.body) {
         // Node 18+ Web ReadableStream to Express response
@@ -634,17 +689,18 @@ async function startServer() {
     }
   });
 
-  // Download M3U8 playlist as attachment with absolute proxy URLs
+  // Download media stream (MP4, MP3, MKV, M3U8 playlist, etc.)
   app.get("/api/stream/download", async (req, res) => {
     const targetUrl = req.query.url as string;
-    const id = (req.query.id as string) || "stream";
+    const id = (req.query.id as string) || "media";
     if (!targetUrl || typeof targetUrl !== "string") {
       return res.status(400).send("Missing target url parameter");
     }
 
     try {
+      const parsedUrl = new URL(targetUrl);
       const forwardHeaders: Record<string, string> = {
-        Referer: "https://idlink.lovable.app/",
+        Referer: `${parsedUrl.origin}/`,
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         Accept: "*/*",
@@ -660,39 +716,68 @@ async function startServer() {
           .send(`Upstream stream returned ${upstreamRes.status}`);
       }
 
-      const text = await upstreamRes.text();
-      const host = req.get("host");
-      const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
-      const origin = `${proto}://${host}`;
+      const rawContentType = upstreamRes.headers.get("content-type") || "";
+      const contentType = inferContentType(targetUrl, rawContentType);
+      const ext = inferExtension(targetUrl);
+      const isM3u8 = ext === "m3u8" || contentType.includes("mpegurl");
 
-      const lines = text.split("\n");
-      const rewrittenLines = lines.map((line) => {
-        const trimmed = line.trim();
-        if (!trimmed) return line;
+      if (isM3u8) {
+        const text = await upstreamRes.text();
+        const host = req.get("host");
+        const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
+        const origin = `${proto}://${host}`;
 
-        if (trimmed.startsWith("#EXT-X-MAP:URI=")) {
-          const uriMatch = trimmed.match(/URI="([^"]+)"/);
-          if (uriMatch && uriMatch[1]) {
-            const fullUrl = new URL(uriMatch[1], targetUrl).toString();
-            const proxyUrl = `${origin}/api/stream/proxy?url=${encodeURIComponent(fullUrl)}`;
-            return trimmed.replace(uriMatch[1], proxyUrl);
+        const lines = text.split("\n");
+        const rewrittenLines = lines.map((line) => {
+          const trimmed = line.trim();
+          if (!trimmed) return line;
+
+          if (trimmed.startsWith("#EXT-X-MAP:URI=")) {
+            const uriMatch = trimmed.match(/URI="([^"]+)"/);
+            if (uriMatch && uriMatch[1]) {
+              const fullUrl = new URL(uriMatch[1], targetUrl).toString();
+              const proxyUrl = `${origin}/api/stream/proxy?url=${encodeURIComponent(fullUrl)}`;
+              return trimmed.replace(uriMatch[1], proxyUrl);
+            }
           }
-        }
 
-        if (trimmed.startsWith("#")) {
-          return line;
-        }
+          if (trimmed.startsWith("#")) {
+            return line;
+          }
 
-        const fullSegUrl = new URL(trimmed, targetUrl).toString();
-        return `${origin}/api/stream/proxy?url=${encodeURIComponent(fullSegUrl)}`;
-      });
+          const fullSegUrl = new URL(trimmed, targetUrl).toString();
+          return `${origin}/api/stream/proxy?url=${encodeURIComponent(fullSegUrl)}`;
+        });
 
-      res.setHeader("Content-Type", "application/vnd.apple.mpegurl; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="stream-${id}.m3u8"`);
-      return res.send(rewrittenLines.join("\n"));
+        res.setHeader("Content-Type", "application/vnd.apple.mpegurl; charset=utf-8");
+        res.setHeader("Content-Disposition", `attachment; filename="${id}.m3u8"`);
+        return res.send(rewrittenLines.join("\n"));
+      }
+
+      // Binary media download (MP4, MP3, MKV, etc.)
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Content-Disposition", `attachment; filename="${id}.${ext}"`);
+      const contentLength = upstreamRes.headers.get("content-length");
+      if (contentLength) res.setHeader("Content-Length", contentLength);
+
+      if (upstreamRes.body) {
+        // @ts-ignore
+        const reader = upstreamRes.body.getReader();
+        const pump = async () => {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(value);
+          }
+          res.end();
+        };
+        await pump();
+      } else {
+        res.end();
+      }
     } catch (error: any) {
       console.error("Stream download error:", error?.message);
-      return res.status(502).send("Error preparing stream playlist for download");
+      return res.status(502).send("Error preparing stream media for download");
     }
   });
 
